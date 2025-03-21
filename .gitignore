@@ -1,0 +1,14 @@
+# Ignore PDF files
+*.pdf
+
+# Ignore Excel files
+*.xls
+*.xlsx
+*.xlsm
+*.csv
+
+# Ignore macOS .DS_Store files
+.DS_Store
+
+#ignore the testing python script
+pt.py
