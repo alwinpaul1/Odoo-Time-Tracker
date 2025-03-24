@@ -2339,9 +2339,48 @@ async def password_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                       "//button[@type='submit' and contains(@class, 'btn-primary')]")
         login_button.click()
         
+        # Check for login error messages
+        try:
+            # Wait a short time for error message to appear if login failed
+            error_wait = WebDriverWait(driver, 5)
+            error_element = error_wait.until(EC.presence_of_element_located(
+                (By.CSS_SELECTOR, ".alert-danger, .o_error_message, .o_notification.o_notification_error")))
+            
+            # If we found an error element, this means login failed
+            error_text = error_element.text.strip()
+            if "password" in error_text.lower():
+                error_message = "Wrong password. Please try again."
+            else:
+                error_message = f"Login failed: {error_text}"
+            
+            driver.quit()
+            
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=processing_message.message_id,
+                text=error_message
+            )
+            await show_menu_buttons(update, context)
+            return ConversationHandler.END
+            
+        except Exception:
+            # No error message found, continue with normal flow
+            pass
+        
         # Wait for login to complete and dashboard to load
-        wait = WebDriverWait(driver, 20)
-        wait.until(EC.presence_of_element_located((By.CLASS_NAME, "o_app")))
+        try:
+            wait = WebDriverWait(driver, 20)
+            wait.until(EC.presence_of_element_located((By.CLASS_NAME, "o_app")))
+        except Exception:
+            # If we time out waiting for the dashboard, assume login failed
+            driver.quit()
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=processing_message.message_id,
+                text="Login failed. Please check your email and password and try again."
+            )
+            await show_menu_buttons(update, context)
+            return ConversationHandler.END
         
         # Get cookies for session ID
         all_cookies = driver.get_cookies()
@@ -2411,10 +2450,25 @@ async def password_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
     except Exception as e:
         logger.error(f"Error in auto fetch: {str(e)}", exc_info=True)
+        
+        # Check for common authentication errors based on error message
+        error_message = str(e)
+        if "chrome not reachable" in error_message.lower():
+            user_message = "Browser connection error. Please try again later."
+        elif "no such element" in error_message.lower():
+            user_message = "Login page elements not found. The Odoo website structure may have changed."
+        elif "timeout" in error_message.lower():
+            user_message = "Login timed out. Please check your credentials and try again."
+        elif "invalid username or password" in error_message.lower() or "password" in error_message.lower():
+            user_message = "Invalid username or password. Please check your credentials and try again."
+        else:
+            # For other errors, display a user-friendly message
+            user_message = "Error fetching tokens. Please try manual credential entry."
+        
         await context.bot.edit_message_text(
             chat_id=update.effective_chat.id,
             message_id=processing_message.message_id,
-            text=f"Error fetching tokens: {str(e)}. Please try manual credential entry."
+            text=user_message
         )
         await show_menu_buttons(update, context)
         return ConversationHandler.END
